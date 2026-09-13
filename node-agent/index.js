@@ -9,7 +9,7 @@ const exec = promisify(execFile);
 const PORT = Number(process.env.AERION_AGENT_PORT || 8787);
 const TOKEN = process.env.AERION_AGENT_TOKEN || (await readFile(process.env.AERION_AGENT_TOKEN_FILE || "/opt/aerion-node/agent.token", "utf8").catch(() => "")).trim();
 const ROOT = process.env.AERION_DATA_ROOT || "/opt/aerion-node/data";
-const MAX_BODY = 30 * 1024 * 1024;
+const MAX_BODY = 40 * 1024 * 1024;
 if (!TOKEN) { console.error("AERION_AGENT_TOKEN is required"); process.exit(1); }
 function send(res, status, body) { const payload = JSON.stringify(body); res.writeHead(status, { "content-type": "application/json", "content-length": Buffer.byteLength(payload) }); res.end(payload); }
 function safeName(value) { const name = String(value || "").trim(); if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{1,48}$/.test(name)) throw new Error("Invalid server name"); return name; }
