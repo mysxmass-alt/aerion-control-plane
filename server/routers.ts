@@ -1,14 +1,13 @@
 import { z } from "zod";
 import { COOKIE_NAME } from "@shared/const";
 import { allowedRuntimeSlugs, billingPlans, runtimeTemplates } from "@shared/catalog";
-import { createStoredFile, deleteStoredFile, getAdminOverview, listStoredFiles } from "./db";
-import { storagePut } from "./storage";
+import { getAdminOverview } from "./db";
 import { createNodeServer, deleteNodeServer, listNodeServers, nodeAction, nodeCommand, nodeExtractZip, nodeFileAction, nodeHealth, nodeListFiles, nodeLogs, nodeStartup, nodeStats, nodeUploadFile, updateNodeStartup } from "./nodeAgent";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
 
-const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 
 function safeFileName(value: string) {
   const trimmed = value.trim().replace(/[^a-zA-Z0-9._-]/g, "-");
@@ -81,9 +80,7 @@ export const appRouter = router({
         const { mimeType, buffer } = decodeDataUrl(input.dataUrl);
         if (input.size !== buffer.byteLength) throw new Error("File size did not match the uploaded payload");
         const name = safeFileName(input.fileName);
-        const upload = await storagePut(`${ctx.user.id}/servers/${input.serverName}/${name}`, buffer, mimeType);
-        await nodeUploadFile(input.serverName, name, buffer);
-        return createStoredFile({ userId: ctx.user.id, serverName: input.serverName, originalName: input.fileName, storageKey: upload.key, storageUrl: upload.url, mimeType, size: buffer.byteLength });
+        return nodeUploadFile(input.serverName, name, buffer);
       }),
     extract: protectedProcedure
       .input(z.object({ serverName: z.string().min(1).max(100), fileName: z.string().min(1).max(255) }))
@@ -91,9 +88,6 @@ export const appRouter = router({
     action: protectedProcedure
       .input(z.object({ serverName: z.string().min(1).max(100), action: z.enum(["move", "rename", "copy", "delete"]), source: z.string().min(1).max(500), destination: z.string().max(500).optional() }))
       .mutation(({ input }) => nodeFileAction(input.serverName, input)),
-    delete: protectedProcedure
-      .input(z.object({ id: z.number().int().positive() }))
-      .mutation(({ ctx, input }) => deleteStoredFile(ctx.user.id, input.id)),
   }),
 });
 
