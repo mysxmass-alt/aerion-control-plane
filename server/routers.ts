@@ -14,13 +14,19 @@ function safeFileName(value: string) {
   return trimmed.slice(0, 180) || "uploaded-file";
 }
 
+function safeUploadPath(value: string) {
+  const normalized = value.trim().replaceAll("\\", "/").replace(/^\/+/, "");
+  if (!normalized || normalized.includes("../") || normalized.startsWith("../")) throw new Error("Invalid upload path");
+  return normalized.split("/").filter(Boolean).map(part => safeFileName(part)).join("/") || "uploaded-file";
+}
+
 function decodeDataUrl(dataUrl: string) {
   const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
   if (!match) throw new Error("File payload must be a base64 data URL");
   const [, mimeType, encoded] = match;
   const buffer = Buffer.from(encoded, "base64");
   if (!buffer.length) throw new Error("File payload is empty");
-  if (buffer.byteLength > MAX_UPLOAD_BYTES) throw new Error("Files must be 10 MB or smaller");
+  if (buffer.byteLength > MAX_UPLOAD_BYTES) throw new Error("Files must be 25 MB or smaller");
   return { mimeType, buffer };
 }
 
@@ -75,11 +81,11 @@ export const appRouter = router({
       .input(z.object({ serverName: z.string().min(1).max(100) }))
       .query(({ ctx, input }) => nodeListFiles(input.serverName)),
     upload: protectedProcedure
-      .input(z.object({ serverName: z.string().min(1).max(100), fileName: z.string().min(1).max(255), mimeType: z.string().min(1).max(150), size: z.number().int().nonnegative().max(MAX_UPLOAD_BYTES), dataUrl: z.string().min(1) }))
+      .input(z.object({ serverName: z.string().min(1).max(100), fileName: z.string().min(1).max(255), relativePath: z.string().max(500).optional(), mimeType: z.string().min(1).max(150), size: z.number().int().nonnegative().max(MAX_UPLOAD_BYTES), dataUrl: z.string().min(1) }))
       .mutation(async ({ ctx, input }) => {
         const { mimeType, buffer } = decodeDataUrl(input.dataUrl);
         if (input.size !== buffer.byteLength) throw new Error("File size did not match the uploaded payload");
-        const name = safeFileName(input.fileName);
+        const name = safeUploadPath(input.relativePath || input.fileName);
         return nodeUploadFile(input.serverName, name, buffer);
       }),
     extract: protectedProcedure
