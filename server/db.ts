@@ -54,6 +54,19 @@ export async function getUserByOpenId(openId: string) {
   return result[0];
 }
 
+export async function getUserByEmail(email: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(users).where(eq(users.email, email)).limit(1);
+  return result[0];
+}
+
+export async function setUserPassword(openId: string, passwordHash: string, role: "user" | "admin" = "user") {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  await db.update(users).set({ passwordHash, role, loginMethod: "password", updatedAt: new Date() }).where(eq(users.openId, openId));
+}
+
 export async function createMagicLinkToken(email: string, tokenHash: string, expiresAt: Date) {
   const db = await getDb();
   if (!db) throw new Error("Database is not available");
