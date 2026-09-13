@@ -2,7 +2,7 @@
 import http from "node:http";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdir, rm, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, rm, readdir, readFile, writeFile, rename, cp, stat } from "node:fs/promises";
 import path from "node:path";
 
 const exec = promisify(execFile);
@@ -10,120 +10,38 @@ const PORT = Number(process.env.AERION_AGENT_PORT || 8787);
 const TOKEN = process.env.AERION_AGENT_TOKEN || (await readFile(process.env.AERION_AGENT_TOKEN_FILE || "/opt/aerion-node/agent.token", "utf8").catch(() => "")).trim();
 const ROOT = process.env.AERION_DATA_ROOT || "/opt/aerion-node/data";
 const MAX_BODY = 30 * 1024 * 1024;
-
-if (!TOKEN) {
-  console.error("AERION_AGENT_TOKEN is required");
-  process.exit(1);
-}
-
-function send(res, status, body) {
-  const payload = JSON.stringify(body);
-  res.writeHead(status, { "content-type": "application/json", "content-length": Buffer.byteLength(payload) });
-  res.end(payload);
-}
-function safeName(value) {
-  const name = String(value || "").trim();
-  if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{1,48}$/.test(name)) throw new Error("Invalid server name");
-  return name;
-}
-function safeRelativePath(value) {
-  const normalized = path.posix.normalize(String(value || "").replaceAll("\\", "/")).replace(/^\/+/, "");
-  if (!normalized || normalized === "." || normalized.startsWith("../") || normalized.includes("/../")) throw new Error("Invalid file path");
-  return normalized;
-}
-function imageForRuntime(runtime) {
-  const images = { nodejs: "node:22-bookworm", python: "python:3.12-slim", "web-hosting": "nginx:alpine" };
-  if (!Object.hasOwn(images, runtime)) throw new Error("Runtime must be nodejs, python, or web-hosting");
-  return images[runtime];
-}
-async function body(req) {
-  let raw = "";
-  for await (const chunk of req) {
-    raw += chunk;
-    if (Buffer.byteLength(raw) > MAX_BODY) throw new Error("Request too large");
-  }
-  return raw ? JSON.parse(raw) : {};
-}
-async function docker(args) {
-  const result = await exec("docker", args, { maxBuffer: 2 * 1024 * 1024 });
-  return result.stdout.trim();
-}
-async function containerInfo(name) {
-  try {
-    const output = await docker(["inspect", "--format", "{{.State.Status}}|{{.State.Running}}|{{.Config.Image}}", `aerion-${name}`]);
-    const [status, running, image] = output.split("|");
-    return { name, status, running: running === "true", image };
-  } catch {
-    return { name, status: "missing", running: false };
-  }
-}
+if (!TOKEN) { console.error("AERION_AGENT_TOKEN is required"); process.exit(1); }
+function send(res, status, body) { const payload = JSON.stringify(body); res.writeHead(status, { "content-type": "application/json", "content-length": Buffer.byteLength(payload) }); res.end(payload); }
+function safeName(value) { const name = String(value || "").trim(); if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{1,48}$/.test(name)) throw new Error("Invalid server name"); return name; }
+function safeRelativePath(value, allowRoot = false) { const normalized = path.posix.normalize(String(value || "").replaceAll("\\", "/")).replace(/^\/+/, ""); if ((!normalized || normalized === ".") && !allowRoot) throw new Error("Invalid file path"); if (normalized.startsWith("../") || normalized.includes("/../")) throw new Error("Invalid file path"); return normalized === "." ? "" : normalized; }
+function imageForRuntime(runtime) { const images = { nodejs: "node:22-bookworm", python: "python:3.12-slim", "web-hosting": "nginx:alpine" }; if (!Object.hasOwn(images, runtime)) throw new Error("Runtime must be nodejs, python, or web-hosting"); return images[runtime]; }
+function defaultStartup(runtime) { return runtime === "python" ? "python3 main.py" : runtime === "web-hosting" ? "nginx -g 'daemon off;'" : "npm install --omit=dev && npm start"; }
+async function body(req) { let raw = ""; for await (const chunk of req) { raw += chunk; if (Buffer.byteLength(raw) > MAX_BODY) throw new Error("Request too large"); } return raw ? JSON.parse(raw) : {}; }
+async function docker(args) { const result = await exec("docker", args, { maxBuffer: 2 * 1024 * 1024 }); return result.stdout.trim(); }
+async function containerInfo(name) { try { const output = await docker(["inspect", "--format", "{{.State.Status}}|{{.State.Running}}|{{.Config.Image}}", `aerion-${name}`]); const [status, running, image] = output.split("|"); return { name, status, running: running === "true", image }; } catch { return { name, status: "missing", running: false }; } }
+async function walk(root, relative = "") { const entries = await readdir(path.join(root, relative), { withFileTypes: true }).catch(() => []); const result = []; for (const entry of entries) { const rel = path.posix.join(relative, entry.name); const full = path.join(root, rel); if (entry.isDirectory()) result.push(...await walk(root, rel)); else { const info = await stat(full); result.push({ path: rel, name: entry.name, type: "file", size: info.size, modifiedAt: info.mtime.toISOString() }); } } return result; }
+async function startupConfig(serverRoot, fallback = "npm start") { try { return JSON.parse(await readFile(path.join(serverRoot, ".aerion-startup.json"), "utf8")); } catch { return { runtime: "nodejs", command: fallback, env: {} }; } }
+async function recreate(name, input = {}) { const root = path.join(ROOT, name); const config = await startupConfig(root, input.startup || defaultStartup(input.runtime || "nodejs")); const runtime = input.runtime || config.runtime || "nodejs"; const image = imageForRuntime(runtime); const memory = Math.max(128, Math.min(Number(input.memoryMb || 512), 8192)); const cpus = Math.max(0.1, Math.min(Number(input.cpu || 0.5), 4)); const volumeTarget = runtime === "web-hosting" ? "/usr/share/nginx/html" : "/workspace"; await docker(["rm", "-f", `aerion-${name}`]).catch(() => {}); const args = ["run", "-d", "--name", `aerion-${name}`, "--restart", "unless-stopped", "--memory", `${memory}m`, "--cpus", String(cpus), "-v", `${root}:${volumeTarget}`]; for (const [key, value] of Object.entries(config.env || {})) if (/^[A-Z_][A-Z0-9_]*$/.test(key)) args.push("-e", `${key}=${String(value).slice(0, 2000)}`); args.push(image, "sh", "-lc", config.command || defaultStartup(runtime)); await docker(args); return { ...(await containerInfo(name)), runtime, memoryMb: memory, cpu: cpus, startup: config }; }
 async function handle(req, res) {
-  if (req.url === "/health" && req.method === "GET") return send(res, 200, { ok: true, service: "aerion-node-agent", version: "1.1.0" });
+  if (req.url === "/health" && req.method === "GET") return send(res, 200, { ok: true, service: "aerion-node-agent", version: "1.2.0" });
   if (req.headers.authorization !== `Bearer ${TOKEN}`) return send(res, 401, { error: "Unauthorized" });
-  const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
-  const parts = url.pathname.split("/").filter(Boolean);
-  if (parts[0] !== "v1") return send(res, 404, { error: "Not found" });
-  const input = req.method === "GET" ? {} : await body(req);
-
-  if (req.method === "GET" && parts[1] === "servers" && parts.length === 2) {
-    const entries = await readdir(ROOT, { withFileTypes: true }).catch(() => []);
-    const servers = await Promise.all(entries.filter((entry) => entry.isDirectory()).map((entry) => containerInfo(entry.name)));
-    return send(res, 200, { servers });
-  }
-
-  if (parts[1] !== "servers" || !parts[2]) return send(res, 404, { error: "Route not found" });
-  const name = safeName(parts[2]);
-  const serverRoot = path.join(ROOT, name);
-  await mkdir(serverRoot, { recursive: true });
-  const container = `aerion-${name}`;
-
-  if (req.method === "POST" && parts.length === 3) {
-    const runtime = input.runtime || "nodejs";
-    const image = imageForRuntime(runtime);
-    const memory = Math.max(128, Math.min(Number(input.memoryMb || 512), 8192));
-    const cpus = Math.max(0.1, Math.min(Number(input.cpu || 0.5), 4));
-    try { await docker(["inspect", container]); return send(res, 409, { error: "Server already exists" }); } catch {}
-    await docker(["run", "-d", "--name", container, "--restart", "unless-stopped", "--memory", `${memory}m`, "--cpus", String(cpus), "-v", `${serverRoot}:/workspace`, image, "sh", "-c", "while true; do sleep 3600; done"]);
-    return send(res, 201, { ...(await containerInfo(name)), runtime, memoryMb: memory, cpu: cpus });
-  }
+  const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`); const parts = url.pathname.split("/").filter(Boolean); if (parts[0] !== "v1") return send(res, 404, { error: "Not found" }); const input = req.method === "GET" ? {} : await body(req);
+  if (req.method === "GET" && parts[1] === "servers" && parts.length === 2) { const entries = await readdir(ROOT, { withFileTypes: true }).catch(() => []); const servers = await Promise.all(entries.filter(e => e.isDirectory() && e.name !== ".aerion").map(e => containerInfo(e.name))); return send(res, 200, { servers }); }
+  if (parts[1] !== "servers" || !parts[2]) return send(res, 404, { error: "Route not found" }); const name = safeName(parts[2]); const serverRoot = path.join(ROOT, name); await mkdir(serverRoot, { recursive: true }); const container = `aerion-${name}`;
+  if (req.method === "POST" && parts.length === 3) { try { await docker(["inspect", container]); return send(res, 409, { error: "Server already exists" }); } catch {} const config = { runtime: input.runtime || "nodejs", command: String(input.startup || defaultStartup(input.runtime || "nodejs")).slice(0, 1000), env: input.env || {} }; await writeFile(path.join(serverRoot, ".aerion-startup.json"), JSON.stringify(config, null, 2)); return send(res, 201, await recreate(name, { ...input, startup: config.command })); }
+  if (req.method === "GET" && parts[3] === "startup") return send(res, 200, await startupConfig(serverRoot));
+  if (req.method === "PUT" && parts[3] === "startup") { const config = { runtime: String(input.runtime || "nodejs"), command: String(input.command || "").trim().slice(0, 1000), env: input.env || {} }; if (!config.command) throw new Error("Startup command is required"); await writeFile(path.join(serverRoot, ".aerion-startup.json"), JSON.stringify(config, null, 2)); return send(res, 200, await recreate(name, { runtime: config.runtime, startup: config.command, env: config.env })); }
+  if (req.method === "GET" && parts[3] === "files") return send(res, 200, { files: await walk(serverRoot).then(files => files.filter(file => file.path !== ".aerion-startup.json")) });
+  if (req.method === "POST" && parts[3] === "files" && parts[4] === "upload") { const relative = safeRelativePath(input.path); const data = Buffer.from(String(input.dataBase64 || ""), "base64"); if (!data.length || data.byteLength > 25 * 1024 * 1024) throw new Error("File payload must be between 1 byte and 25 MB"); const target = path.join(serverRoot, relative); await mkdir(path.dirname(target), { recursive: true }); await writeFile(target, data); return send(res, 201, { success: true, path: relative, size: data.byteLength }); }
+  if (req.method === "POST" && parts[3] === "files" && parts[4] === "action") { const source = path.join(serverRoot, safeRelativePath(input.source)); const destination = path.join(serverRoot, safeRelativePath(input.destination, true)); if (input.action === "move" || input.action === "rename") { await mkdir(path.dirname(destination), { recursive: true }); await rename(source, destination); } else if (input.action === "copy") { await mkdir(path.dirname(destination), { recursive: true }); await cp(source, destination, { recursive: true }); } else if (input.action === "delete") await rm(source, { recursive: true, force: true }); else throw new Error("Unsupported file action"); return send(res, 200, { success: true }); }
+  if (req.method === "POST" && parts[3] === "extract") { const archive = path.join(serverRoot, safeRelativePath(input.archive)); if (!archive.toLowerCase().endsWith(".zip")) throw new Error("Only zip archives can be extracted"); await exec("unzip", ["-o", archive, "-d", serverRoot]); return send(res, 200, { success: true }); }
+  if (req.method === "POST" && parts[3] === "command") { const command = String(input.command || "").trim(); if (!command || command.length > 500) throw new Error("Invalid command"); const output = await exec("docker", ["exec", container, "sh", "-lc", command], { maxBuffer: 2 * 1024 * 1024 }); return send(res, 200, { output: `${output.stdout}${output.stderr || ""}` }); }
   if (req.method === "POST" && parts[3] === "start") { await docker(["start", container]); return send(res, 200, await containerInfo(name)); }
   if (req.method === "POST" && parts[3] === "stop") { await docker(["stop", "-t", "10", container]); return send(res, 200, await containerInfo(name)); }
   if (req.method === "POST" && parts[3] === "restart") { await docker(["restart", "-t", "10", container]); return send(res, 200, await containerInfo(name)); }
-  if (req.method === "GET" && parts[3] === "stats") {
-    const output = await docker(["stats", "--no-stream", "--format", "{{json .}}", container]);
-    return send(res, 200, JSON.parse(output || "{}"));
-  }
-  if (req.method === "GET" && parts[3] === "logs") {
-    const output = await docker(["logs", "--tail", "200", container]);
-    return send(res, 200, { logs: output });
-  }
-  if (req.method === "POST" && parts[3] === "files") {
-    const relative = safeRelativePath(input.path);
-    const target = path.join(serverRoot, relative);
-    const data = Buffer.from(String(input.dataBase64 || ""), "base64");
-    if (!data.length || data.byteLength > 20 * 1024 * 1024) throw new Error("File payload must be between 1 byte and 20 MB");
-    await mkdir(path.dirname(target), { recursive: true });
-    await writeFile(target, data);
-    return send(res, 201, { success: true, path: relative, size: data.byteLength });
-  }
-  if (req.method === "POST" && parts[3] === "extract") {
-    const archive = path.join(serverRoot, safeRelativePath(input.archive));
-    if (!archive.startsWith(serverRoot + path.sep) || !archive.toLowerCase().endsWith(".zip")) throw new Error("Only zip archives inside the server volume can be extracted");
-    await exec("unzip", ["-o", archive, "-d", serverRoot]);
-    return send(res, 200, { success: true });
-  }
-  if (req.method === "DELETE" && parts.length === 3) {
-    await docker(["rm", "-f", container]).catch(() => {});
-    await rm(serverRoot, { recursive: true, force: true });
-    return send(res, 200, { success: true });
-  }
+  if (req.method === "GET" && parts[3] === "stats") return send(res, 200, JSON.parse(await docker(["stats", "--no-stream", "--format", "{{json .}}", container]) || "{}"));
+  if (req.method === "GET" && parts[3] === "logs") return send(res, 200, { logs: await docker(["logs", "--tail", "200", container]) });
+  if (req.method === "DELETE" && parts.length === 3) { await docker(["rm", "-f", container]).catch(() => {}); await rm(serverRoot, { recursive: true, force: true }); return send(res, 200, { success: true }); }
   return send(res, 404, { error: "Route not found" });
 }
-
-const server = http.createServer((req, res) => {
-  handle(req, res).catch((error) => {
-    console.error(error);
-    send(res, 400, { error: error.message || "Request failed" });
-  });
-});
-server.listen(PORT, "127.0.0.1", () => console.log(`Aerion node agent listening on 127.0.0.1:${PORT}`));
+http.createServer((req, res) => handle(req, res).catch(error => { console.error(error); send(res, 400, { error: error.message || "Request failed" }); })).listen(PORT, "127.0.0.1", () => console.log(`Aerion node agent listening on 127.0.0.1:${PORT}`));

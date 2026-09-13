@@ -38,10 +38,16 @@ export function nodeStats(name: string) {
   return request<Record<string, unknown>>(`/v1/servers/${encodeURIComponent(name)}/stats`);
 }
 export function nodeUploadFile(name: string, filePath: string, data: Buffer) {
-  return request<{ success: boolean; path: string; size: number }>(`/v1/servers/${encodeURIComponent(name)}/files`, {
+  return request<{ success: boolean; path: string; size: number }>(`/v1/servers/${encodeURIComponent(name)}/files/upload`, {
     method: "POST",
     body: JSON.stringify({ path: filePath, dataBase64: data.toString("base64") }),
   });
+}
+export function nodeListFiles(name: string) {
+  return request<{ files: Array<{ path: string; name: string; type: "file"; size: number; modifiedAt: string }> }>(`/v1/servers/${encodeURIComponent(name)}/files`);
+}
+export function nodeFileAction(name: string, input: { action: "move" | "rename" | "copy" | "delete"; source: string; destination?: string }) {
+  return request<{ success: boolean }>(`/v1/servers/${encodeURIComponent(name)}/files/action`, { method: "POST", body: JSON.stringify(input) });
 }
 export function nodeExtractZip(name: string, archive: string) {
   return request<{ success: boolean }>(`/v1/servers/${encodeURIComponent(name)}/extract`, {
@@ -51,4 +57,13 @@ export function nodeExtractZip(name: string, archive: string) {
 }
 export function deleteNodeServer(name: string) {
   return request<{ success: boolean }>(`/v1/servers/${encodeURIComponent(name)}`, { method: "DELETE" });
+}
+export function nodeStartup(name: string) {
+  return request<{ runtime: string; command: string; env: Record<string, string> }>(`/v1/servers/${encodeURIComponent(name)}/startup`);
+}
+export function updateNodeStartup(name: string, input: { runtime: string; command: string; env: Record<string, string> }) {
+  return request<Record<string, unknown>>(`/v1/servers/${encodeURIComponent(name)}/startup`, { method: "PUT", body: JSON.stringify(input) });
+}
+export function nodeCommand(name: string, command: string) {
+  return request<{ output: string }>(`/v1/servers/${encodeURIComponent(name)}/command`, { method: "POST", body: JSON.stringify({ command }) });
 }

@@ -3,7 +3,7 @@ import { COOKIE_NAME } from "@shared/const";
 import { allowedRuntimeSlugs, billingPlans, runtimeTemplates } from "@shared/catalog";
 import { createStoredFile, deleteStoredFile, getAdminOverview, listStoredFiles } from "./db";
 import { storagePut } from "./storage";
-import { createNodeServer, deleteNodeServer, listNodeServers, nodeAction, nodeExtractZip, nodeHealth, nodeLogs, nodeStats, nodeUploadFile } from "./nodeAgent";
+import { createNodeServer, deleteNodeServer, listNodeServers, nodeAction, nodeCommand, nodeExtractZip, nodeFileAction, nodeHealth, nodeListFiles, nodeLogs, nodeStartup, nodeStats, nodeUploadFile, updateNodeStartup } from "./nodeAgent";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
@@ -58,6 +58,9 @@ export const appRouter = router({
       .input(z.object({ name: z.string().min(2).max(48), runtime: z.enum(allowedRuntimeSlugs), memoryMb: z.number().int().min(128).max(8192), cpu: z.number().min(0.1).max(4) }))
       .mutation(({ input }) => createNodeServer(input)),
     delete: protectedProcedure.input(z.object({ name: z.string().min(2).max(48) })).mutation(({ input }) => deleteNodeServer(input.name)),
+    startup: protectedProcedure.input(z.object({ name: z.string().min(2).max(48) })).query(({ input }) => nodeStartup(input.name)),
+    updateStartup: protectedProcedure.input(z.object({ name: z.string().min(2).max(48), runtime: z.string().min(1), command: z.string().min(1).max(1000), env: z.record(z.string(), z.string()).default({}) })).mutation(({ input }) => updateNodeStartup(input.name, { runtime: input.runtime, command: input.command, env: input.env })),
+    command: protectedProcedure.input(z.object({ name: z.string().min(2).max(48), command: z.string().min(1).max(500) })).mutation(({ input }) => nodeCommand(input.name, input.command)),
     action: protectedProcedure
       .input(z.object({ name: z.string().min(2).max(48), action: z.enum(["start", "stop", "restart"]) }))
       .mutation(({ input }) => nodeAction(input.name, input.action)),
@@ -71,7 +74,7 @@ export const appRouter = router({
   files: router({
     list: protectedProcedure
       .input(z.object({ serverName: z.string().min(1).max(100) }))
-      .query(({ ctx, input }) => listStoredFiles(ctx.user.id, input.serverName)),
+      .query(({ ctx, input }) => nodeListFiles(input.serverName)),
     upload: protectedProcedure
       .input(z.object({ serverName: z.string().min(1).max(100), fileName: z.string().min(1).max(255), mimeType: z.string().min(1).max(150), size: z.number().int().nonnegative().max(MAX_UPLOAD_BYTES), dataUrl: z.string().min(1) }))
       .mutation(async ({ ctx, input }) => {
@@ -85,6 +88,9 @@ export const appRouter = router({
     extract: protectedProcedure
       .input(z.object({ serverName: z.string().min(1).max(100), fileName: z.string().min(1).max(255) }))
       .mutation(({ input }) => nodeExtractZip(input.serverName, safeFileName(input.fileName))),
+    action: protectedProcedure
+      .input(z.object({ serverName: z.string().min(1).max(100), action: z.enum(["move", "rename", "copy", "delete"]), source: z.string().min(1).max(500), destination: z.string().max(500).optional() }))
+      .mutation(({ input }) => nodeFileAction(input.serverName, input)),
     delete: protectedProcedure
       .input(z.object({ id: z.number().int().positive() }))
       .mutation(({ ctx, input }) => deleteStoredFile(ctx.user.id, input.id)),
