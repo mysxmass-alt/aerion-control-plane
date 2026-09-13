@@ -75,12 +75,14 @@ const navItems: NavItem[] = [
   { label: "Activity", icon: History, group: "Configure" },
 ];
 
-const servers = [
-  { name: "signal-bot", label: "Production bot", state: "Running", tone: "cyan" as Tone, icon: "SB", usage: 68 },
-  { name: "invoice-flow", label: "Automation worker", state: "Running", tone: "lime" as Tone, icon: "IF", usage: 42 },
-  { name: "market-pulse", label: "Data monitor", state: "Offline", tone: "violet" as Tone, icon: "MP", usage: 0 },
-  { name: "staging-lab", label: "Development sandbox", state: "Starting", tone: "amber" as Tone, icon: "SL", usage: 17 },
-];
+type LiveServer = { name: string; status: string; running: boolean; image?: string };
+type PanelServer = LiveServer & { label: string; state: string; tone: Tone; icon: string; usage: number };
+const emptyServer: PanelServer = { name: "No server selected", status: "missing", running: false, label: "Create a server to begin", state: "Offline", tone: "violet", icon: "—", usage: 0 };
+
+function panelServer(server: LiveServer): PanelServer {
+  const tone: Tone = server.running ? "cyan" : "violet";
+  return { ...server, label: server.image?.includes("python") ? "Python service" : server.image?.includes("nginx") ? "Hosted website" : "Node.js service", state: server.running ? "Running" : "Offline", tone, icon: server.name.slice(0, 2).toUpperCase(), usage: 0 };
+}
 
 const files = [
   { name: "src", type: "folder", size: "—", modified: "Today, 09:42" },
@@ -193,8 +195,8 @@ function NetworkView({ onAction }: { onAction: (action: string) => void }) {
 }
 function GlobeIcon() { return <span className="domain-icon"><Network size={17} /></span>; }
 
-function SettingsView({ onAction }: { onAction: (action: string) => void }) {
-  return <div className="subview"><div className="subview-heading"><div><span className="eyebrow">Server lifecycle</span><h2>Server settings</h2><p>Control the identity, power behavior, and destructive actions for this server.</p></div></div><div className="settings-grid"><div className="settings-card"><div className="settings-card-head"><Settings2 size={17} /><strong>General settings</strong></div><label>Server name<input defaultValue="signal-bot" /></label><label>Description<textarea defaultValue="Realtime Discord intelligence and event processing." /></label><button className="primary-button" onClick={() => onAction("Server settings saved")}><Check size={15} />Save changes</button></div><div className="settings-card"><div className="settings-card-head"><ShieldCheck size={17} /><strong>Power behavior</strong></div><div className="toggle-row"><span><strong>Auto-start on crash</strong><small>Restart after an unexpected exit.</small></span><button className="toggle toggle-on" onClick={() => onAction("Auto-start toggled")}><i /></button></div><div className="toggle-row"><span><strong>Announce maintenance</strong><small>Notify collaborators before a restart.</small></span><button className="toggle toggle-on" onClick={() => onAction("Maintenance alerts toggled")}><i /></button></div><div className="toggle-row"><span><strong>Install updates automatically</strong><small>Only patch-level runtime updates.</small></span><button className="toggle" onClick={() => onAction("Automatic updates toggled")}><i /></button></div></div></div><div className="danger-zone"><div><strong>Danger zone</strong><span>These actions affect production data and cannot be undone.</span></div><div><button onClick={() => onAction("Transfer server flow opened")}><ArrowDownToLine size={14} />Transfer server</button><button className="danger-button" onClick={() => onAction("Delete confirmation required")}><Trash2 size={14} />Delete server</button></div></div></div>;
+function SettingsView({ onAction, serverName, onDelete }: { onAction: (action: string) => void; serverName: string; onDelete: () => void }) {
+  return <div className="subview"><div className="subview-heading"><div><span className="eyebrow">Server lifecycle</span><h2>Server settings</h2><p>Control the identity, power behavior, and destructive actions for this server.</p></div></div><div className="settings-grid"><div className="settings-card"><div className="settings-card-head"><Settings2 size={17} /><strong>General settings</strong></div><label>Server name<input defaultValue={serverName} /></label><label>Description<textarea defaultValue="Aerion managed service." /></label><button className="primary-button" onClick={() => onAction("Server settings saved")}><Check size={15} />Save changes</button></div><div className="settings-card"><div className="settings-card-head"><ShieldCheck size={17} /><strong>Power behavior</strong></div><div className="toggle-row"><span><strong>Auto-start on crash</strong><small>Restart after an unexpected exit.</small></span><button className="toggle toggle-on" onClick={() => onAction("Auto-start toggled")}><i /></button></div><div className="toggle-row"><span><strong>Announce maintenance</strong><small>Notify collaborators before a restart.</small></span><button className="toggle toggle-on" onClick={() => onAction("Maintenance alerts toggled")}><i /></button></div><div className="toggle-row"><span><strong>Install updates automatically</strong><small>Only patch-level runtime updates.</small></span><button className="toggle" onClick={() => onAction("Automatic updates toggled")}><i /></button></div></div></div><div className="danger-zone"><div><strong>Danger zone</strong><span>Deleting {serverName} permanently removes its container and files.</span></div><div><button onClick={() => onAction("Transfer server flow opened")}><ArrowDownToLine size={14} />Transfer server</button><button className="danger-button" onClick={onDelete}><Trash2 size={14} />Delete server</button></div></div></div>;
 }
 
 function ActivityView() {
@@ -203,8 +205,12 @@ function ActivityView() {
 
 export default function Home() {
   const { user, loading, login } = useAuth();
+  const utils = trpc.useUtils();
+  const serversQuery = trpc.node.servers.useQuery(undefined, { enabled: Boolean(user), refetchInterval: 5000 });
+  const createServerMutation = trpc.node.create.useMutation({ onSuccess: () => { void utils.node.servers.invalidate(); toast.success("Server created"); }, onError: error => toast.error("Create server failed", { description: error.message }) });
+  const deleteServerMutation = trpc.node.delete.useMutation({ onSuccess: () => { void utils.node.servers.invalidate(); toast.success("Server deleted"); }, onError: error => toast.error("Delete server failed", { description: error.message }) });
   const [activePanel, setActivePanel] = useState<PanelKey>("Console");
-  const [activeServer, setActiveServer] = useState(servers[0]);
+  const [activeServer, setActiveServer] = useState<PanelServer>(emptyServer);
   const [serverMenuOpen, setServerMenuOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
@@ -234,8 +240,25 @@ export default function Home() {
     nodeActionMutation.mutate({ name: activeServer.name, action: next });
   };
 
+  const liveServers = (serversQuery.data?.servers ?? []).map(panelServer);
+  useEffect(() => {
+    if (!liveServers.length) { setActiveServer(emptyServer); setServerRunning(false); return; }
+    if (!liveServers.some(server => server.name === activeServer.name)) setActiveServer(liveServers[0]);
+    const current = liveServers.find(server => server.name === activeServer.name) ?? liveServers[0];
+    setServerRunning(current.running);
+  }, [serversQuery.data, activeServer.name]);
+
+  const createServer = () => {
+    const name = window.prompt("Server name:", "my-bot")?.trim();
+    if (!name) return;
+    const runtime = window.prompt("Egg: nodejs, python, or web-hosting", "nodejs")?.trim() as "nodejs" | "python" | "web-hosting" | undefined;
+    if (!runtime || !["nodejs", "python", "web-hosting"].includes(runtime)) return toast.error("Choose nodejs, python, or web-hosting");
+    createServerMutation.mutate({ name, runtime, memoryMb: runtime === "web-hosting" ? 256 : 512, cpu: 0.5 });
+  };
+
   if (loading) return <div className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-300">Loading Aerion…</div>;
   if (!user) return login;
+  if (!serversQuery.isLoading && liveServers.length === 0) return <div className="flex min-h-screen items-center justify-center bg-slate-950 px-6 text-white"><div className="w-full max-w-xl rounded-2xl border border-white/10 bg-white/[.04] p-10 text-center"><Server className="mx-auto mb-4 text-cyan-300" size={34} /><h1 className="text-3xl font-semibold">Your server list is empty</h1><p className="mt-3 text-sm text-slate-300">Create a Node.js service, Python worker, or hosted website to get started.</p><button className="mt-7 rounded-lg bg-cyan-300 px-5 py-3 font-semibold text-slate-950" onClick={createServer} disabled={createServerMutation.isPending}><Plus size={15} className="mr-2 inline" />{createServerMutation.isPending ? "Creating…" : "Create your first server"}</button><div className="mt-6"><button className="text-sm text-slate-400 underline" onClick={() => window.location.href = "/admin"}>Open admin control plane</button></div></div></div>;
 
   const renderPanel = () => {
     const props = { onAction: action };
@@ -247,7 +270,7 @@ export default function Home() {
     if (activePanel === "Backups") return <BackupsView {...props} />;
     if (activePanel === "Startup") return <StartupView {...props} />;
     if (activePanel === "Network") return <NetworkView {...props} />;
-    if (activePanel === "Settings") return <SettingsView {...props} />;
+    if (activePanel === "Settings") return <SettingsView {...props} serverName={activeServer.name} onDelete={() => { if (window.confirm(`Delete ${activeServer.name} and all its files?`)) deleteServerMutation.mutate({ name: activeServer.name }); }} />;
     return <ActivityView />;
   };
 
@@ -255,7 +278,7 @@ export default function Home() {
     <aside className={`panel-sidebar ${sidebarOpen ? "panel-sidebar-open" : ""}`}>
       <div className="sidebar-brand"><Logo /><div><strong>aerion<span>°</span></strong><small>control plane</small></div><button className="sidebar-close" onClick={() => setSidebarOpen(false)}><X size={17} /></button></div>
       <div className="account-switch"><span className="account-avatar">A</span><span><strong>Acme workspace</strong><small>Production account</small></span><ChevronDown size={14} /></div>
-      <div className="server-switcher-wrap"><span className="sidebar-label">Your servers</span><button className="server-switcher" onClick={() => setServerMenuOpen(!serverMenuOpen)}><span className={`server-avatar server-avatar-${activeServer.tone}`}>{activeServer.icon}</span><span><strong>{activeServer.name}</strong><small><i className={`dot dot-${activeServer.tone}`} />{activeServer.state}</small></span><ChevronDown size={14} /></button>{serverMenuOpen && <div className="server-menu">{servers.map((server) => <button key={server.name} onClick={() => { setActiveServer(server); setServerRunning(server.state === "Running"); setServerMenuOpen(false); action(`Switched to ${server.name}`); }}><span className={`server-avatar server-avatar-${server.tone}`}>{server.icon}</span><span><strong>{server.name}</strong><small>{server.label}</small></span>{server.name === activeServer.name && <Check size={14} />}</button>)}<div className="server-menu-foot"><Plus size={13} />Create new server</div></div>}</div>
+      <div className="server-switcher-wrap"><span className="sidebar-label">Your servers</span><button className="server-switcher" onClick={() => setServerMenuOpen(!serverMenuOpen)}><span className={`server-avatar server-avatar-${activeServer.tone}`}>{activeServer.icon}</span><span><strong>{activeServer.name}</strong><small><i className={`dot dot-${activeServer.tone}`} />{activeServer.state}</small></span><ChevronDown size={14} /></button>{serverMenuOpen && <div className="server-menu">{liveServers.map(server => <button key={server.name} onClick={() => { setActiveServer(server); setServerRunning(server.running); setServerMenuOpen(false); action(`Switched to ${server.name}`); }}><span className={`server-avatar server-avatar-${server.tone}`}>{server.icon}</span><span><strong>{server.name}</strong><small>{server.label} · {server.image ?? "runtime pending"}</small></span>{server.name === activeServer.name && <Check size={14} />}</button>)}<button className="server-menu-foot" onClick={createServer}><Plus size={13} />Create new server</button></div>}</div>
       <nav className="panel-nav">{(["Manage", "Configure"] as const).map((group) => <div className="panel-nav-group" key={group}><span className="sidebar-label">{group}</span>{grouped[group].map(({ label, icon: Icon }) => <button key={label} className={`panel-nav-item ${activePanel === label ? "panel-nav-active" : ""}`} onClick={() => selectPanel(label)}><Icon size={16} /><span>{label}</span>{label === "Console" && <span className="nav-live" />}</button>)}</div>)}</nav>
       <div className="sidebar-bottom"><div className="node-health"><span className="health-icon"><Activity size={14} /></span><span><strong>Node healthy</strong><small>iad1 · 12ms latency</small></span><i /></div><div className="sidebar-links"><button onClick={() => { if (user?.role === "admin") window.location.href = "/admin"; else action("Admin access requires an administrator role"); }}><ShieldCheck size={15} />Admin console</button><button onClick={() => action("Support center opened")}><LifeBuoy size={15} />Support</button><button onClick={() => action("Documentation opened")}><CircleHelp size={15} />Docs</button></div><div className="signed-in"><span className="user-avatar">AM</span><span><strong>{user?.name ?? "Alex Morgan"}</strong><small>{user?.role === "admin" ? "Admin" : "Owner"}</small></span><MoreHorizontal size={16} /></div></div>
     </aside>

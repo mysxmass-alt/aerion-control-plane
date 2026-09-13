@@ -3,7 +3,7 @@ import { COOKIE_NAME } from "@shared/const";
 import { allowedRuntimeSlugs, billingPlans, runtimeTemplates } from "@shared/catalog";
 import { createStoredFile, deleteStoredFile, getAdminOverview, listStoredFiles } from "./db";
 import { storagePut } from "./storage";
-import { createNodeServer, listNodeServers, nodeAction, nodeExtractZip, nodeHealth, nodeLogs, nodeStats, nodeUploadFile } from "./nodeAgent";
+import { createNodeServer, deleteNodeServer, listNodeServers, nodeAction, nodeExtractZip, nodeHealth, nodeLogs, nodeStats, nodeUploadFile } from "./nodeAgent";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
@@ -50,8 +50,14 @@ export const appRouter = router({
     createServer: adminProcedure
       .input(z.object({ name: z.string().min(2).max(48), runtime: z.enum(allowedRuntimeSlugs), memoryMb: z.number().int().min(128).max(8192), cpu: z.number().min(0.1).max(4) }))
       .mutation(({ input }) => createNodeServer(input)),
+    deleteServer: adminProcedure.input(z.object({ name: z.string().min(2).max(48) })).mutation(({ input }) => deleteNodeServer(input.name)),
   }),
   node: router({
+    servers: protectedProcedure.query(() => listNodeServers()),
+    create: protectedProcedure
+      .input(z.object({ name: z.string().min(2).max(48), runtime: z.enum(allowedRuntimeSlugs), memoryMb: z.number().int().min(128).max(8192), cpu: z.number().min(0.1).max(4) }))
+      .mutation(({ input }) => createNodeServer(input)),
+    delete: protectedProcedure.input(z.object({ name: z.string().min(2).max(48) })).mutation(({ input }) => deleteNodeServer(input.name)),
     action: protectedProcedure
       .input(z.object({ name: z.string().min(2).max(48), action: z.enum(["start", "stop", "restart"]) }))
       .mutation(({ input }) => nodeAction(input.name, input.action)),
