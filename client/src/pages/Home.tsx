@@ -102,7 +102,7 @@ const activity = [
 ];
 
 function Logo() {
-  return <div className="panel-logo"><span className="logo-orbit logo-orbit-one" /><span className="logo-orbit logo-orbit-two" /><span className="logo-core" /></div>;
+  return <img className="mystic-host-logo" src="/mystic-host-logo.svg" alt="MYSTIC HOST" />;
 }
 
 function StatusPill({ children, tone = "cyan" }: { children: React.ReactNode; tone?: Tone }) {
@@ -254,7 +254,7 @@ export default function Home() {
 
   return <div className="control-plane">
     <aside className={`panel-sidebar ${sidebarOpen ? "panel-sidebar-open" : ""}`}>
-      <div className="sidebar-brand"><Logo /><div><strong>aerion<span>°</span></strong><small>control plane</small></div><button className="sidebar-close" onClick={() => setSidebarOpen(false)}><X size={17} /></button></div>
+      <div className="sidebar-brand"><Logo /><div><strong>MYSTIC <span>HOST</span></strong><small>hosting control panel</small></div><button className="sidebar-close" onClick={() => setSidebarOpen(false)}><X size={17} /></button></div>
       <div className="account-switch"><span className="account-avatar">A</span><span><strong>Acme workspace</strong><small>Production account</small></span><ChevronDown size={14} /></div>
       <div className="server-switcher-wrap"><span className="sidebar-label">Your servers</span><button className="server-switcher" onClick={() => setServerMenuOpen(!serverMenuOpen)}><span className={`server-avatar server-avatar-${activeServer.tone}`}>{activeServer.icon}</span><span><strong>{activeServer.name}</strong><small><i className={`dot dot-${activeServer.tone}`} />{activeServer.state}</small></span><ChevronDown size={14} /></button>{serverMenuOpen && <div className="server-menu">{liveServers.map(server => <button key={server.name} onClick={() => { setActiveServer(server); setServerRunning(server.running); setServerMenuOpen(false); action(`Switched to ${server.name}`); }}><span className={`server-avatar server-avatar-${server.tone}`}>{server.icon}</span><span><strong>{server.name}</strong><small>{server.label} · {server.image ?? "runtime pending"}</small></span>{server.name === activeServer.name && <Check size={14} />}</button>)}<button className="server-menu-foot" onClick={createServer}><Plus size={13} />Create new server</button></div>}</div>
       <nav className="panel-nav">{(["Manage", "Configure"] as const).map((group) => <div className="panel-nav-group" key={group}><span className="sidebar-label">{group}</span>{grouped[group].map(({ label, icon: Icon }) => <button key={label} className={`panel-nav-item ${activePanel === label ? "panel-nav-active" : ""}`} onClick={() => selectPanel(label)}><Icon size={16} /><span>{label}</span>{label === "Console" && <span className="nav-live" />}</button>)}</div>)}</nav>
@@ -268,7 +268,7 @@ export default function Home() {
         <div className="panel-view-heading"><div><span className="view-eyebrow">{activePanel === "Console" ? "Live process" : "Server workspace"}</span><h2>{activePanel}</h2></div><div className="view-heading-actions">{activePanel === "Console" ? <><span className="last-deploy"><Check size={13} /> Deployed 12 min ago</span><button className="outline-button" onClick={() => action("Deployment details opened")}><Box size={14} />Deployment</button></> : <span className="server-id">Server ID <code>svr_8L4mJ9xQ</code><Copy size={13} /></span>}</div></div>
         {renderPanel()}
       </div>
-      <footer className="panel-footer"><span><i className="footer-dot" />All systems operational</span><span>API v1 · aerion° control plane</span><span>Region iad1 <span className="footer-separator">·</span> v1.8.0</span></footer>
+      <footer className="panel-footer"><span><i className="footer-dot" />All systems operational</span><span>API v1 · MYSTIC HOST</span><span>Region iad1 <span className="footer-separator">·</span> v1.8.0</span></footer>
     </main>
     {commandOpen && <div className="command-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) setCommandOpen(false); }}><div className="command-panel"><div className="command-input"><Search size={17} /><input autoFocus placeholder="Search servers, files, settings..." /><kbd>esc</kbd></div><div className="command-list"><span>Quick navigation</span>{navItems.slice(0, 6).map(({ label, icon: Icon }) => <button key={label} onClick={() => { selectPanel(label); setCommandOpen(false); }}><Icon size={16} /><strong>{label}</strong><small>Open server {label.toLowerCase()}</small><kbd>↵</kbd></button>)}</div><div className="command-foot"><span><kbd>↑↓</kbd> navigate</span><span><kbd>↵</kbd> select</span><span><kbd>esc</kbd> close</span></div></div></div>}
   </div>;
