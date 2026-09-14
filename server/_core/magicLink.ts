@@ -31,8 +31,8 @@ async function sendMagicLink(email: string, link: string) {
     body: JSON.stringify({
       from: ENV.mailFrom,
       to: [email],
-      subject: "Your Aerion sign-in link",
-      html: `<p>Sign in to Aerion Control Plane:</p><p><a href="${link}">Open Aerion</a></p><p>This link expires in 15 minutes and can only be used once.</p>`,
+      subject: "Your MYSTIC HOST sign-in link",
+      html: `<p>Sign in to MYSTIC HOST:</p><p><a href="${link}">Open MYSTIC HOST</a></p><p>This link expires in 15 minutes and can only be used once.</p>`,
     }),
   });
   if (!response.ok) throw new Error("Email provider rejected the magic link");
