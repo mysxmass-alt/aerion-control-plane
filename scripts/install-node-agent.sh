@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
+
+AERION_USER="${AERION_USER:-${SUDO_USER:-ubuntu}}"
 TOKEN="$(cat /tmp/aerion-node-token)"
-sudo install -d -o ubuntu -g ubuntu /opt/aerion-node/bin /opt/aerion-node/data
-sudo install -o ubuntu -g ubuntu -m 0755 /tmp/aerion-node-agent.js /opt/aerion-node/bin/agent.js
+sudo install -d -o "$AERION_USER" -g "$AERION_USER" /opt/aerion-node/bin /opt/aerion-node/data
+sudo install -o "$AERION_USER" -g "$AERION_USER" -m 0755 /tmp/aerion-node-agent.js /opt/aerion-node/bin/agent.js
 printf '%s\n' "$TOKEN" | sudo tee /opt/aerion-node/agent.token >/dev/null
 sudo chmod 600 /opt/aerion-node/agent.token
 sudo tee /etc/systemd/system/aerion-node-agent.service >/dev/null <<'UNIT'

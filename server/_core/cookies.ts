@@ -39,10 +39,16 @@ export function getSessionCookieOptions(
   //       ? hostname
   //       : undefined;
 
+  const secure = isSecureRequest(req);
+
   return {
     httpOnly: true,
     path: "/",
-    sameSite: "none",
-    secure: isSecureRequest(req),
+    // The panel is normally served behind HTTPS nginx and may be embedded or
+    // reached through a different frontend origin. SameSite=None is required
+    // there, but it must be paired with Secure. Keep local HTTP development
+    // usable with the browser-compatible lax fallback.
+    sameSite: secure ? "none" : "lax",
+    secure,
   };
 }
