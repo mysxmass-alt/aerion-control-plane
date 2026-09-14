@@ -15,6 +15,17 @@ if ! command -v docker >/dev/null 2>&1; then
   sudo apt-get update
   sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 fi
+if ! docker compose version >/dev/null 2>&1; then
+  # Docker may already come from the VPS image, without the Compose plugin.
+  # Install the plugin independently instead of assuming a missing Docker
+  # binary means the whole Docker toolchain is absent.
+  sudo apt-get update
+  sudo apt-get install -y docker-compose-plugin
+fi
+docker compose version >/dev/null 2>&1 || {
+  echo "Docker Compose plugin is unavailable; install docker-compose-plugin and retry." >&2
+  exit 1
+}
 sudo systemctl enable --now docker
 sudo usermod -aG docker "$AERION_USER"
 sudo ufw allow 22/tcp
