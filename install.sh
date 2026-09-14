@@ -119,7 +119,8 @@ EOF
 printf '%s\n' '--> Packaging the panel build'
 tar --exclude=node_modules --exclude=.git --exclude=data \
   -czf /tmp/aerion-panel.tar.gz dist package.json pnpm-lock.yaml \
-  drizzle drizzle.config.ts patches shared server
+  client components.json drizzle drizzle.config.ts patches shared server \
+  tsconfig.json tsconfig.node.json vite.config.ts
 
 printf '%s\n' '--> Installing the panel, database, nginx, and TLS'
 ./scripts/install-selfhost-panel.sh
