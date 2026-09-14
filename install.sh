@@ -100,7 +100,9 @@ if ! command -v node >/dev/null 2>&1 || [[ "$(node -p 'process.versions.node.spl
   curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
   sudo apt-get install -y nodejs
 fi
-sudo npm install --global "pnpm@${PNPM_VERSION}"
+if ! command -v pnpm >/dev/null 2>&1 || ! pnpm --version >/dev/null 2>&1; then
+  sudo npm install --global --force "pnpm@${PNPM_VERSION}"
+fi
 
 printf '%s\n' '--> Installing dependencies and building the panel'
 pnpm install --frozen-lockfile
