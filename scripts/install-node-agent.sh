@@ -30,7 +30,8 @@ NoNewPrivileges=false
 WantedBy=multi-user.target
 UNIT
 sudo systemctl daemon-reload
-sudo systemctl enable --now aerion-node-agent
+sudo systemctl enable aerion-node-agent
+sudo systemctl restart aerion-node-agent
 sudo systemctl --no-pager --full status aerion-node-agent | head -25
 for attempt in $(seq 1 20); do
   if curl -fsS http://127.0.0.1:8787/health; then
