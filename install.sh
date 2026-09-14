@@ -16,15 +16,22 @@ readonly DEFAULT_REPO_URL="https://github.com/mysxmass-alt/aerion-control-plane.
 readonly CLONE_DIR="/tmp/aerion-src"
 readonly PNPM_VERSION="10.4.1"
 
-if [[ "${EUID}" -eq 0 ]]; then
-  echo "Run this installer as a sudo-capable user, not root." >&2
-  exit 1
-fi
-
-if ! command -v sudo >/dev/null 2>&1; then
+if [[ "${EUID}" -ne 0 ]] && ! command -v sudo >/dev/null 2>&1; then
   echo "sudo is required. Run this on Ubuntu as a sudo-capable user." >&2
   exit 1
 fi
+
+# Alibaba Cloud images commonly open the SSH session as root. The deployment
+# scripts still use sudo for portability, so keep it when available and use an
+# existing ubuntu account for services; otherwise root is a valid fallback.
+if [[ -z "${AERION_USER:-}" ]]; then
+  if [[ "${EUID}" -eq 0 ]]; then
+    AERION_USER="$(getent passwd ubuntu >/dev/null && printf ubuntu || printf root)"
+  else
+    AERION_USER="${SUDO_USER:-${USER}}"
+  fi
+fi
+export AERION_USER
 
 REPO_URL="${AERION_REPO_URL:-$DEFAULT_REPO_URL}"
 DOMAIN="${AERION_DOMAIN:-}"
