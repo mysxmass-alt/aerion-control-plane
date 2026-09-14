@@ -19,6 +19,11 @@ if ! docker compose version >/dev/null 2>&1; then
   # Docker may already come from the VPS image, without the Compose plugin.
   # Install the plugin independently instead of assuming a missing Docker
   # binary means the whole Docker toolchain is absent.
+  sudo install -m 0755 -d /etc/apt/keyrings
+  curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor --yes -o /etc/apt/keyrings/docker.gpg
+  sudo chmod a+r /etc/apt/keyrings/docker.gpg
+  . /etc/os-release
+  echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu ${VERSION_CODENAME} stable" | sudo tee /etc/apt/sources.list.d/docker.list >/dev/null
   sudo apt-get update
   sudo apt-get install -y docker-compose-plugin
 fi
