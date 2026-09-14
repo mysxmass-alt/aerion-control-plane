@@ -32,5 +32,13 @@ UNIT
 sudo systemctl daemon-reload
 sudo systemctl enable --now aerion-node-agent
 sudo systemctl --no-pager --full status aerion-node-agent | head -25
-curl -fsS http://127.0.0.1:8787/health
-printf '\n'
+for attempt in $(seq 1 20); do
+  if curl -fsS http://127.0.0.1:8787/health; then
+    printf '\n'
+    exit 0
+  fi
+  sleep 1
+done
+echo "Node agent did not become healthy within 20 seconds." >&2
+sudo journalctl -u aerion-node-agent -n 40 --no-pager >&2 || true
+exit 1
