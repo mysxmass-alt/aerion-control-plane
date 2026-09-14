@@ -57,7 +57,12 @@ set -a
 # shellcheck disable=SC1091
 source /etc/aerion/panel.env
 set +a
-sudo -u "$AERION_USER" env NODE_ENV=production DATABASE_URL="$DATABASE_URL" JWT_SECRET="$JWT_SECRET" STORAGE_DIR="$STORAGE_DIR" AERION_NODE_AGENT_URL="$AERION_NODE_AGENT_URL" AERION_NODE_AGENT_TOKEN="$AERION_NODE_AGENT_TOKEN" pnpm run db:push
+if mysql --protocol=TCP -h 127.0.0.1 -u aerion -p"$DB_PASSWORD" aerion \
+    -e "SELECT 1 FROM users LIMIT 1;" >/dev/null 2>&1; then
+  echo "Aerion database schema already exists; skipping migration generation."
+else
+  sudo -u "$AERION_USER" env NODE_ENV=production DATABASE_URL="$DATABASE_URL" JWT_SECRET="$JWT_SECRET" STORAGE_DIR="$STORAGE_DIR" AERION_NODE_AGENT_URL="$AERION_NODE_AGENT_URL" AERION_NODE_AGENT_TOKEN="$AERION_NODE_AGENT_TOKEN" pnpm run db:push
+fi
 sudo -u "$AERION_USER" pnpm run build
 
 sudo tee /etc/systemd/system/aerion-panel.service >/dev/null <<'UNIT'
