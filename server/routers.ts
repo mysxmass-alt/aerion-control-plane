@@ -2,7 +2,7 @@ import { z } from "zod";
 import { COOKIE_NAME } from "@shared/const";
 import { allowedRuntimeSlugs, billingPlans, runtimeTemplates } from "@shared/catalog";
 import { getAdminOverview } from "./db";
-import { createNodeServer, deleteNodeServer, listNodeServers, nodeAction, nodeCommand, nodeExtractZip, nodeFileAction, nodeHealth, nodeListFiles, nodeLogs, nodeStartup, nodeStats, nodeUploadFile, updateNodeStartup } from "./nodeAgent";
+import { createNodeServer, deleteNodeServer, listNodeServers, nodeAction, nodeCommand, nodeExtractZip, nodeFileAction, nodeHealth, nodeListFiles, nodeLogs, nodeStartup, nodeStats, nodeUploadFile, updateNodeResources, updateNodeStartup } from "./nodeAgent";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
@@ -52,6 +52,7 @@ export const appRouter = router({
     overview: adminProcedure.query(() => getAdminOverview()),
     nodeHealth: adminProcedure.query(() => nodeHealth()),
     nodeServers: adminProcedure.query(() => listNodeServers()),
+    updateServerResources: adminProcedure.input(z.object({ name: z.string().min(2).max(48), memoryMb: z.number().int().min(128).max(8192), cpu: z.number().min(0.1).max(4) })).mutation(({ input }) => updateNodeResources(input.name, { memoryMb: input.memoryMb, cpu: input.cpu })),
     createServer: adminProcedure
       .input(z.object({ name: z.string().min(2).max(48), runtime: z.enum(allowedRuntimeSlugs), memoryMb: z.number().int().min(128).max(8192), cpu: z.number().min(0.1).max(4) }))
       .mutation(({ input }) => createNodeServer(input)),

@@ -17,7 +17,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return body as T;
 }
 
-export type NodeServer = { name: string; status: string; running: boolean; image?: string };
+export type NodeServer = { name: string; status: string; running: boolean; image?: string; memoryMb?: number; cpu?: number };
 
 export function nodeHealth() {
   return request<{ ok: boolean; service: string; version: string }>("/health");
@@ -27,6 +27,9 @@ export function listNodeServers() {
 }
 export function createNodeServer(input: { name: string; runtime: string; memoryMb: number; cpu: number }) {
   return request<NodeServer>(`/v1/servers/${encodeURIComponent(input.name)}`, { method: "POST", body: JSON.stringify(input) });
+}
+export function updateNodeResources(name: string, input: { memoryMb: number; cpu: number }) {
+  return request<NodeServer>(`/v1/servers/${encodeURIComponent(name)}/resources`, { method: "PATCH", body: JSON.stringify(input) });
 }
 export function nodeAction(name: string, action: "start" | "stop" | "restart") {
   return request<NodeServer>(`/v1/servers/${encodeURIComponent(name)}/${action}`, { method: "POST" });
