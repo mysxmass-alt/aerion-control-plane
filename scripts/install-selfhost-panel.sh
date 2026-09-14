@@ -33,7 +33,9 @@ sudo install -d -o "$AERION_USER" -g "$AERION_USER" /opt/aerion-panel
 sudo rm -rf /opt/aerion-panel/dist /opt/aerion-panel/package.json /opt/aerion-panel/pnpm-lock.yaml /opt/aerion-panel/node_modules /opt/aerion-panel/client /opt/aerion-panel/server /opt/aerion-panel/shared /opt/aerion-panel/drizzle /opt/aerion-panel/drizzle.config.ts
 sudo tar -xzf "$PANEL_ARCHIVE" -C /opt/aerion-panel
 cd /opt/aerion-panel
-sudo npm install --global "pnpm@${PNPM_VERSION}"
+if ! command -v pnpm >/dev/null 2>&1 || ! pnpm --version >/dev/null 2>&1; then
+  sudo npm install --global --force "pnpm@${PNPM_VERSION}"
+fi
 sudo -u "$AERION_USER" pnpm install --frozen-lockfile
 sudo -u "$AERION_USER" install -d /opt/aerion-panel/data/storage
 sudo chown -R "$AERION_USER":"$AERION_USER" /opt/aerion-panel
