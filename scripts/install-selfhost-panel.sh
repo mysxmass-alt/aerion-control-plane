@@ -109,7 +109,9 @@ sudo sed -i "s/__DOMAIN__/${DOMAIN}/g" /etc/nginx/sites-available/aerion-panel
 sudo ln -sf /etc/nginx/sites-available/aerion-panel /etc/nginx/sites-enabled/aerion-panel
 sudo nginx -t
 sudo systemctl daemon-reload
-sudo systemctl enable --now aerion-panel
+sudo systemctl daemon-reload
+sudo systemctl enable aerion-panel
+sudo systemctl restart aerion-panel
 sudo systemctl reload nginx
 sudo certbot --nginx --non-interactive --agree-tos --register-unsafely-without-email --redirect -d "$DOMAIN"
 sudo systemctl reload nginx
